@@ -1,0 +1,196 @@
+import pdb
+import subprocess
+import numpy as np
+from os.path import expanduser
+cime = '{}/CESM/cesm2.2/cime/scripts'.format(expanduser('~'))
+
+# ==========================================================================================
+# ==========================================================================================
+
+class namelist_lattice:
+    def __init__(self, component):
+        '''
+        This class constructs a configuration lattice object, which organizes a lattice of
+        positions in paramter space, intended for automating the running of several 
+        simulation runs with varying namelist settings.
+
+        Parameters
+        ----------
+        component : string
+            The component that the namelists on this lattice are meant to apply to. If
+            self.clone_case is called, the namelist changes will be made to 
+            user_nl_{component}.
+        '''
+        self.component = component
+        self.param_vectors = []
+        self.param_names = []
+        self._lattice = None
+    
+    @property
+    def lattice(self):
+        if(len(self.param_names) < 2): 
+            raise RuntimeError('must add at least 2 dimensions to build lattice')
+        else:
+            return self._lattice
+
+    # ------------------------------------------------------------------------------
+
+    def expand(self, names, limits=None, nsamples=None, values=None):
+        '''
+        Adds N dimensions to the lattice, and popultes each with parameter samples
+
+        Parameters
+        ----------
+        name : string or (N,) string array
+            Name of the parameters
+        limits : (2,) or (N,2) float array, optional
+            Upper and lower limits for each paramter
+        nsamples : int or (N,) int array, optional
+            number of samples to insert between the stated limits for each parameter
+        values : (N,) float array, or list of float lists, optional
+            number of samples to insert between the stated limits for each parameter
+        '''
+      
+        errstr = 'either (\'values\') or (\'limits\' and \'nsamples\') must be passed, not both'
+       
+        if(values is None):
+            assert limits is not None and nsamples is not None, err
+            
+            names = np.atleast_1d(names)
+            limits = np.atleast_2d(limits)
+            nsamples = np.atleast_1d(nsamples)
+            
+            assert len(names) == len(limits) and len(names) == len(nsamples),\
+                   'args \'names\', \'limits\', and \'nsamples\' must all be of equal length'
+           
+            # build new dimensions
+            self.param_names.extend(names)
+            for i in range(len(names)):
+                vals = np.linspace(limits[i][0], limits[i][1], nsamples[i])
+                self.param_vectors.append(vals)
+                
+        else:
+            assert limits is None and nsamples is None, err
+            
+            names = np.atleast_1d(names)
+            values = np.atleast_2d(values)
+            
+            assert len(names) == len(values),\
+                   'args \'names\'  and \'values\' must be of equal length'
+
+            # build new dimensions
+            self.param_names.extend(names)
+            self.param_vectors.extend(values)
+            
+        if(len(self.param_names) > 1):
+            self._build_lattice()
+    
+    # ------------------------------------------------------------------------------
+
+    def filter(self, mask):
+        '''
+        Filters out undesired run configurations from the lattice
+
+        Parameters
+        ----------
+        mask : bool array with dimensions matching lattice
+        '''
+
+        self._lattice = self._lattice[mask]
+        
+    # ------------------------------------------------------------------------------
+
+    def _build_lattice(self):
+        '''
+        Builds the lattice and returns it as a set of M-dimensional points, where M is 
+        the total number of dimensions added with expand()
+
+        Returns
+        -------
+        lattice : (T, M) float array
+            a array of T total M-dimensional points on the lattice
+        '''
+        grid = np.meshgrid(*self.param_vectors)
+        points = np.vstack(list(map(np.ravel, grid)))
+        self._lattice = np.core.records.fromarrays(points, names=self.param_names)
+ 
+    # ------------------------------------------------------------------------------
+
+    def create_clones(self, root_case, cime_dir=cime, cloned_top_dir=None, clone_prefix=None):
+        '''
+        clone the root_case CESM CIME case per each point on the lattice, and edit the
+        namelist file at cloned_case/user_nl_{self.component} with the content of that 
+        point.
+
+        Parameters
+        ----------
+        root_case : string
+            Location of the root case to be cloned
+        cime_dir : string
+            Location of the cime/scripts directory within cesm2.2
+        cloned_top_dir : string
+            Top directory for all clones to be created in. Default is None, in which case
+            clones are all created at the same location as root_case
+        clone_prefix : string
+            prefix of each clone case. Default is None, in which case the name of the 
+            root case will be used. The full cloned case location is then
+            {cloned_top_dir}/{clone_prex}_{P1}{V1}_{P2}{V2}_....
+            where P are the names of the namelist settings on the lattice (constant for all
+            clones), and v are their values (unique for each clone)
+        '''
+
+        if(self._lattice is None):
+            raise RuntimeError('Lattice must first be built by calling expand()')
+        
+        namelists = self._lattice.dtype.names
+        if(cloned_top_dir is None):
+            cloned_top_dir = '/'.join(root_case.split('/')[:-1])
+        if(clone_prefix is None):
+            clone_prefix = root_case.split('/')[-1]
+        
+        print('creating {} clones'.format(len(self._lattice))) 
+
+        # clone the root case per lattice point
+        for i in range(len(self._lattice)):
+            params = self._lattice[i]
+            sfx = '_'.join(['{}{}'.format(namelists[i], params[i]) for i in range(len(params))])
+            new_case = '{}/{}__{}'.format(cloned_top_dir, clone_prefix, sfx)
+
+            cmd = '{}/create_clone --case {} --clone {} --keepexe'.format(
+                   cime_dir, new_case, root_case)
+            subprocess.run(cmd.split(' '))
+            
+            # --- edit the user_nl_{component} file ---
+            
+            # purge current occurences of the parameters present in the lattice
+            with open('{}/user_nl_{}'.format(new_case, self.component), 'r+') as f:
+                
+                entries = f.readlines()
+                f.seek(0)
+                for e in entries:
+                    param = ''.join(e.split()).split('=')[0]
+                    if(param not in namelists): 
+                        f.write(e)
+                f.truncate()
+                nl = f.read()
+            
+            # write new parameter choices
+            with open('{}/user_nl_{}'.format(new_case, self.component), 'a') as f:
+                if not nl.endswith('\n'):
+                    f.write('\n')
+                for j in range(len(params)):
+                    f.write('{} = {}\n'.format(namelists[j], params[j]))
+                
+                
+
+            
+
+
+
+
+
+
+
+
+
+
