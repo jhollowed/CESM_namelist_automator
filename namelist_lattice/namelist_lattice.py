@@ -4,6 +4,11 @@ import glob
 import subprocess
 import numpy as np
 from os.path import expanduser
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+mpl.rcParams['axes.xmargin'] = 0.1
+mpl.rcParams['axes.ymargin'] = 0.1
 cime = '{}/CESM/cesm2.2/cime/scripts'.format(expanduser('~'))
 
 # ==========================================================================================
@@ -156,16 +161,21 @@ class namelist_lattice:
             clone_prefix = root_case.split('/')[-1]
         self.clone_dir = cloned_top_dir
         
-        print('creating {} clones'.format(len(self._lattice))) 
+        print('\n\n =============== CREATING {} CLONES ===============\n'.format(
+               len(self._lattice)))
 
         # clone the root case per lattice point
         for i in range(len(self._lattice)):
+            
             params = self._lattice[i]
+            print('\n =============== creating clone with {} = {} ===============\n'.format(
+                   namelists, params))
+            
             sfx = '_'.join(['{}{}'.format(namelists[i], params[i]) for i in range(len(params))])
             new_case = '{}/{}__{}'.format(cloned_top_dir, clone_prefix, sfx)
 
-            cmd = '{}/create_clone --case {} --clone {} --keepexe'.format(
-                   cime_dir, new_case, root_case)
+            cmd = '{}/create_clone --case {} --clone {} --cime-output-root {} --keepexe'.format(
+                   cime_dir, new_case, root_case, top_output_dir)
             subprocess.run(cmd.split(' '))
             
             # --- edit the user_nl_{component} file ---
@@ -203,6 +213,46 @@ class namelist_lattice:
         for clone in clones:
             os.chdir(clone)
             subprocess.run('{}/case.submit'.format(clone))
+    
+    # ------------------------------------------------------------------------------
+
+    def vis_planes(self):
+        '''
+        Visualizes the lattice as a triangle plot, with a subplot per parameter pair
+        '''
+
+        N = len(self.param_names)
+        f, ax = plt.subplots(N, N, figsize=(10,10))
+        
+        # remove diagonal and upper traingle
+        for i in range(N):
+            remove_right = N-i
+            for j in range(remove_right):
+                ax[i, N-(j+1)].axis('off')
+
+        # populate lower triangle
+        for i in range(N):
+            num_plots = i
+            for j in range(num_plots):
+                v1 = self.lattice[self.param_names[j]]
+                v2 = self._lattice[self.param_names[i]]
+                ax[i, j].plot(v1, v2, '.r', ms=10)
+                #ax[i, j].set_xlim([min(v1) - min(v1)*0.1, max(v1)*1.1])
+                #ax[i, j].set_ylim([min(v2)*0.9, max(v2)*1.1])
+                ax[i, j].grid(True)
+                if(j == 0):
+                    ax[i,j].set_ylabel(self.param_names[i])
+                else:
+                    ax[i, j].set_yticklabels([])
+                if(i == N-1):
+                    ax[i,j].set_xlabel(self.param_names[j])
+                else:
+                    ax[i, j].set_xticklabels([])
+                    
+        plt.tight_layout()
+        plt.show()
+
+
             
                 
                 
