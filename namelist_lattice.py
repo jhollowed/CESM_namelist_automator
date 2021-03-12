@@ -237,8 +237,6 @@ class namelist_lattice:
                 v1 = self.lattice[self.param_names[j]]
                 v2 = self._lattice[self.param_names[i]]
                 ax[i, j].plot(v1, v2, '.r', ms=10)
-                #ax[i, j].set_xlim([min(v1) - min(v1)*0.1, max(v1)*1.1])
-                #ax[i, j].set_ylim([min(v2)*0.9, max(v2)*1.1])
                 ax[i, j].grid(True)
                 if(j == 0):
                     ax[i,j].set_ylabel(self.param_names[i])
