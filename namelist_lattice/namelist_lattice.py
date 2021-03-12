@@ -1,4 +1,6 @@
+import os
 import pdb
+import glob
 import subprocess
 import numpy as np
 from os.path import expanduser
@@ -25,6 +27,7 @@ class namelist_lattice:
         self.param_vectors = []
         self.param_names = []
         self._lattice = None
+        self.clone_dir = None
     
     @property
     def lattice(self):
@@ -116,7 +119,8 @@ class namelist_lattice:
  
     # ------------------------------------------------------------------------------
 
-    def create_clones(self, root_case, cime_dir=cime, cloned_top_dir=None, clone_prefix=None):
+    def create_clones(self, root_case, cloned_top_dir=None, clone_prefix=None, 
+                      top_output_dir=None, cime_dir=cime):
         '''
         clone the root_case CESM CIME case per each point on the lattice, and edit the
         namelist file at cloned_case/user_nl_{self.component} with the content of that 
@@ -126,8 +130,6 @@ class namelist_lattice:
         ----------
         root_case : string
             Location of the root case to be cloned
-        cime_dir : string
-            Location of the cime/scripts directory within cesm2.2
         cloned_top_dir : string
             Top directory for all clones to be created in. Default is None, in which case
             clones are all created at the same location as root_case
@@ -137,6 +139,11 @@ class namelist_lattice:
             {cloned_top_dir}/{clone_prex}_{P1}{V1}_{P2}{V2}_....
             where P are the names of the namelist settings on the lattice (constant for all
             clones), and v are their values (unique for each clone)
+        top_output_dir : string
+            The top directory in which all clones will output to after being run. Default is 
+            None, in which case the output directory of the root case is used.
+        cime_dir : string
+            Location of the cime/scripts directory within cesm2.2
         '''
 
         if(self._lattice is None):
@@ -147,6 +154,7 @@ class namelist_lattice:
             cloned_top_dir = '/'.join(root_case.split('/')[:-1])
         if(clone_prefix is None):
             clone_prefix = root_case.split('/')[-1]
+        self.clone_dir = cloned_top_dir
         
         print('creating {} clones'.format(len(self._lattice))) 
 
@@ -180,6 +188,22 @@ class namelist_lattice:
                     f.write('\n')
                 for j in range(len(params)):
                     f.write('{} = {}\n'.format(namelists[j], params[j]))
+    
+    # ------------------------------------------------------------------------------
+
+    def submit_clone_runs(self):
+        '''
+        Submit runs of the cloned cases created by self.create_clones()
+        '''
+        
+        if(self.clone_dir is None):
+            raise RuntimeError('Clone cases must first be created by calling expand()')
+            
+        clones = glob.glob('{}/*'.format(self.clone_dir))
+        for clone in clones:
+            os.chdir(clone)
+            subprocess.run('{}/case.submit'.format(clone))
+            
                 
                 
 
