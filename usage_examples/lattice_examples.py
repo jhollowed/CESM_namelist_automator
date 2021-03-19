@@ -27,12 +27,12 @@ def lattice_submission_example():
     lattice.filter(mask)
 
     root_case = '/home/hollowed/CESM/cesm2.2_cases/cesm2.2.fv3.C48.L64.fhs94'
-    cloned_top_dir = '/home/hollowed/CESM/cesm2.2_cases/fhs94_L64_clones'
+    top_clone_dir = '/home/hollowed/CESM/cesm2.2_cases/fhs94_L64_clones'
     top_output_dir = '/scratch/cjablono_root/cjablono1/hollowed/tmp'
     cime_dir = '/home/hollowed/CESM/cesm2.2/cime/scripts'
     clone_prefix = 'cam'
 
-    lattice.create_clones(root_case, cloned_top_dir, clone_prefix, top_output_dir, cime_dir)
+    lattice.create_clones(root_case, top_clone_dir, top_output_dir, clone_prefix, cime_dir)
     lattice.submit_clone_runs()
 
 

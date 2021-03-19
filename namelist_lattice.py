@@ -1,8 +1,10 @@
 import os
 import pdb
 import glob
+import shutil
 import subprocess
 import numpy as np
+from pathlib import Path
 from os.path import expanduser
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -13,6 +15,8 @@ cime = '{}/CESM/cesm2.2/cime/scripts'.format(expanduser('~'))
 
 # ==========================================================================================
 # ==========================================================================================
+
+
 
 class namelist_lattice:
     def __init__(self, component):
@@ -41,7 +45,9 @@ class namelist_lattice:
         else:
             return self._lattice
 
+
     # ------------------------------------------------------------------------------
+
 
     def expand(self, names, limits=None, nsamples=None, values=None):
         '''
@@ -89,11 +95,13 @@ class namelist_lattice:
             # build new dimensions
             self.param_names.extend(names)
             self.param_vectors.extend(values)
-            
-        if(len(self.param_names) > 1):
-            self._build_lattice()
-    
+        
+        # build the lattice
+        self._build_lattice()
+
+
     # ------------------------------------------------------------------------------
+
 
     def filter(self, mask):
         '''
@@ -105,8 +113,10 @@ class namelist_lattice:
         '''
 
         self._lattice = self._lattice[mask]
-        
+
+
     # ------------------------------------------------------------------------------
+
 
     def _build_lattice(self):
         '''
@@ -121,11 +131,13 @@ class namelist_lattice:
         grid = np.meshgrid(*self.param_vectors)
         points = np.vstack(list(map(np.ravel, grid)))
         self._lattice = np.core.records.fromarrays(points, names=self.param_names)
- 
+
+
     # ------------------------------------------------------------------------------
 
-    def create_clones(self, root_case, cloned_top_dir=None, clone_prefix=None, 
-                      top_output_dir=None, cime_dir=cime):
+
+    def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, 
+                      clone_prefix=None, cime_dir=cime, overwrite=False, clean_all=False):
         '''
         clone the root_case CESM CIME case per each point on the lattice, and edit the
         namelist file at cloned_case/user_nl_{self.component} with the content of that 
@@ -135,47 +147,95 @@ class namelist_lattice:
         ----------
         root_case : string
             Location of the root case to be cloned
-        cloned_top_dir : string
+        top_clone_dir : string
             Top directory for all clones to be created in. Default is None, in which case
             clones are all created at the same location as root_case
-        clone_prefix : string
-            prefix of each clone case. Default is None, in which case the name of the 
-            root case will be used. The full cloned case location is then
-            {cloned_top_dir}/{clone_prex}_{P1}{V1}_{P2}{V2}_....
-            where P are the names of the namelist settings on the lattice (constant for all
-            clones), and v are their values (unique for each clone)
         top_output_dir : string
             The top directory in which all clones will output to after being run. Default is 
             None, in which case the output directory of the root case is used.
+        clone_prefix : string
+            prefix of each clone case. Default is None, in which case the name of the 
+            root case will be used. The full cloned case location is then
+            {top_clone_dir}/{clone_prex}_{P1}{V1}_{P2}{V2}_....
+            where P are the names of the namelist settings on the lattice (constant for all
+            clones), and v are their values (unique for each clone)
         cime_dir : string
             Location of the cime/scripts directory within cesm2.2
+        overwrite : bool
+            Whether or not to overwrite preexisting clone cases found in top_clone_dir with 
+            name conflicts. Default is False, in which case an error will be thrown in this 
+            event. Leave as Default to be safe unless you know you need it to be otherwise.
+        clean_all : bool
+            Whether or not to completely remove content of top_clone_dir and top_output_dir
+            before creating clones. This is useful if the previous run of this function was known
+            to contain mistakes. Default is False, which it probably should be, and you porobably
+            shouldn't change it. Definitely don't change it if top_clone_dir and top_output_dir 
+            were not passed (unless you enjoy rebuilding your CESM cases, or you know exactly what
+            you're doing).
         '''
 
         if(self._lattice is None):
             raise RuntimeError('Lattice must first be built by calling expand()')
+        if(not os.path.isdir(root_case)):
+            raise RuntimeError('Root case {} does not exist'.format(root_case))
         
         namelists = self._lattice.dtype.names
-        if(cloned_top_dir is None):
-            cloned_top_dir = '/'.join(root_case.split('/')[:-1])
+       
+        # enforce defaults
+        if(top_clone_dir is None):
+            top_clone_dir = '/'.join(root_case.split('/')[:-1])
         if(clone_prefix is None):
             clone_prefix = root_case.split('/')[-1]
-        self.clone_dir = cloned_top_dir
-        
-        print('\n\n =============== CREATING {} CLONES ===============\n'.format(
-               len(self._lattice)))
+        self.clone_dir = top_clone_dir 
+
+        # clean clone and output dirs if user specified
+        if(clean_all):
+            clonedir_exist = os.path.isdir(top_clone_dir)
+            outdir_exist = os.path.isdir(top_output_dir)
+            if(clonedir_exist or outdir_exist):
+                print('\n\n ========== REMOVING {} and {} =========='.format(
+                       top_clone_dir, top_output_dir))
+                input('Press Enter to continue with deletion...')
+                if(clonedir_exist): shutil.rmtree(top_clone_dir)
+                if(outdir_exist): shutil.rmtree(top_output_dir)
+            else:
+                print('Nothing to clean')
+            
+        # create directories if not exist 
+        if(not os.path.isdir(top_clone_dir)):
+            print('creating {}'.format(top_clone_dir))
+            Path(top_clone_dir).mkdir(parents=True)
+        if(top_output_dir is not None):
+            if(not os.path.isdir(top_output_dir)):
+                print('creating {}'.format(top_output_dir))
+                Path(top_output_dir).mkdir(parents=True) 
+             
+        print('\n\n =============== CREATING {} CLONES ===============\n'.format(len(self._lattice)))
 
         # clone the root case per lattice point
         for i in range(len(self._lattice)):
             
             params = self._lattice[i]
-            print('\n =============== creating clone with {} = {} ===============\n'.format(
+            print('\n --------------- creating clone with {} = {} ---------------\n'.format(
                    namelists, params))
             
-            sfx = '_'.join(['{}{}'.format(namelists[i], params[i]) for i in range(len(params))])
-            new_case = '{}/{}__{}'.format(cloned_top_dir, clone_prefix, sfx)
+            sfx = '__'.join(['{}_{}'.format(namelists[i], params[i]) for i in range(len(params))])
+            new_case = '{}/{}__{}'.format(top_clone_dir, clone_prefix, sfx)
+            
+            # check that this clone does not already exist; if so, handle
+            if(os.path.isdir('new_folder') and overwrite == False):
+                raise RuntimeError('clone at {} already exists!'.format(new_case)) 
+            elif(os.path.isdir('new_folder') and overwrite == True):
+                print('overwrite option set to True; overwriting existing case at {}'.format(new_case))
+                shutil.rmtree(new_case)
 
-            cmd = '{}/create_clone --case {} --clone {} --cime-output-root {} --keepexe'.format(
-                   cime_dir, new_case, root_case, top_output_dir)
+            # call the cloning script
+            if(top_output_dir is not None):
+                cmd = '{}/create_clone --case {} --clone {} --cime-output-root {} --keepexe'.format(
+                       cime_dir, new_case, root_case, top_output_dir)
+            else:
+                cmd = '{}/create_clone --case {} --clone {} --keepexe'.format(
+                       cime_dir, new_case, root_case)
             subprocess.run(cmd.split(' '))
             
             # --- edit the user_nl_{component} file ---
@@ -198,8 +258,10 @@ class namelist_lattice:
                     f.write('\n')
                 for j in range(len(params)):
                     f.write('{} = {}\n'.format(namelists[j], params[j]))
-    
+
+
     # ------------------------------------------------------------------------------
+
 
     def submit_clone_runs(self):
         '''
@@ -211,14 +273,20 @@ class namelist_lattice:
             
         clones = glob.glob('{}/*'.format(self.clone_dir))
         for clone in clones:
+            
             os.chdir(clone)
-            subprocess.run('{}/case.submit'.format(clone))
-    
+            submit = '{}/case.submit'.format(clone)
+            
+            print('\n\n=============== submitting job from {} ===============\n'.format(submit))
+            subprocess.run(submit)
+
+
     # ------------------------------------------------------------------------------
+
 
     def vis_planes(self):
         '''
-        Visualizes the lattice as a triangle plot, with a subplot per parameter pair
+        Visualizes the lattice as a GTC, with a subplot per parameter pair
         '''
 
         N = len(self.param_names)
@@ -249,20 +317,3 @@ class namelist_lattice:
                     
         plt.tight_layout()
         plt.show()
-
-
-            
-                
-                
-
-            
-
-
-
-
-
-
-
-
-
-
