@@ -35,8 +35,9 @@ class namelist_lattice:
         self.component = component
         self.param_vectors = []
         self.param_names = []
+        self.xml_mask = []
+        self.clone_dirs = []
         self._lattice = None
-        self.clone_dir = None
     
     @property
     def lattice(self):
@@ -49,7 +50,7 @@ class namelist_lattice:
     # ------------------------------------------------------------------------------
 
 
-    def expand(self, names, limits=None, nsamples=None, values=None):
+    def expand(self, names, limits=None, nsamples=None, values=None, xmlchange=False):
         '''
         Adds N dimensions to the lattice, and popultes each with parameter samples
 
@@ -63,6 +64,11 @@ class namelist_lattice:
             number of samples to insert between the stated limits for each parameter
         values : (N,) float array, or list of float lists, optional
             number of samples to insert between the stated limits for each parameter
+        xmlchange : boolean
+            whether or not to flag this dimension as a parameter that must be changed
+            in a CIME case by xmlchange (i.e. the parameter is stored in env_run.xml). 
+            Defaults to False, in which case it is assumed that the parameter is stored
+            in user_nl_{self.component}
         '''
       
         errstr = 'either (\'values\') or (\'limits\' and \'nsamples\') must be passed, not both'
@@ -95,11 +101,16 @@ class namelist_lattice:
             # build new dimensions
             self.param_names.extend(names)
             self.param_vectors.extend(values)
+
+        if(xmlchange):
+            self.xml_mask.append(1)
+        else:
+            self.xml_mask.append(0)
         
         # build the lattice
         self._build_lattice()
-
-
+    
+    
     # ------------------------------------------------------------------------------
 
 
@@ -180,13 +191,12 @@ class namelist_lattice:
             raise RuntimeError('Root case {} does not exist'.format(root_case))
         
         namelists = self._lattice.dtype.names
-       
+        
         # enforce defaults
         if(top_clone_dir is None):
             top_clone_dir = '/'.join(root_case.split('/')[:-1])
         if(clone_prefix is None):
             clone_prefix = root_case.split('/')[-1]
-        self.clone_dir = top_clone_dir 
 
         # clean clone and output dirs if user specified
         if(clean_all):
@@ -223,9 +233,9 @@ class namelist_lattice:
             new_case = '{}/{}__{}'.format(top_clone_dir, clone_prefix, sfx)
             
             # check that this clone does not already exist; if so, handle
-            if(os.path.isdir('new_folder') and overwrite == False):
+            if(os.path.isdir(new_case) and overwrite == False):
                 raise RuntimeError('clone at {} already exists!'.format(new_case)) 
-            elif(os.path.isdir('new_folder') and overwrite == True):
+            elif(os.path.isdir(new_case) and overwrite == True):
                 print('overwrite option set to True; overwriting existing case at {}'.format(new_case))
                 shutil.rmtree(new_case)
 
@@ -237,6 +247,7 @@ class namelist_lattice:
                 cmd = '{}/create_clone --case {} --clone {} --keepexe'.format(
                        cime_dir, new_case, root_case)
             subprocess.run(cmd.split(' '))
+            self.clone_dirs.append(new_case)
             
             # --- edit the user_nl_{component} file ---
             
@@ -257,7 +268,13 @@ class namelist_lattice:
                 if not nl.endswith('\n'):
                     f.write('\n')
                 for j in range(len(params)):
-                    f.write('{} = {}\n'.format(namelists[j], params[j]))
+                    if(self.xml_mask[j] == 0):
+                        # write parameter choice to user_nl_{self.component}
+                        f.write('{} = {}\n'.format(namelists[j], params[j]))
+                    else::
+                        # write parameter choice to env_run.xml via xmlchange
+                        xmlcmd = '{}/xmlchange {} {}={}'.format(new_case, namelists[j], params[j])
+                        subprocess.run(xmlcmd.split(' '))
 
 
     # ------------------------------------------------------------------------------
@@ -268,11 +285,10 @@ class namelist_lattice:
         Submit runs of the cloned cases created by self.create_clones()
         '''
         
-        if(self.clone_dir is None):
+        if(len(self.clone_dirs) == 0):
             raise RuntimeError('Clone cases must first be created by calling expand()')
             
-        clones = glob.glob('{}/*'.format(self.clone_dir))
-        for clone in clones:
+        for clone in self.clone_dirs:
             
             os.chdir(clone)
             submit = '{}/case.submit'.format(clone)
