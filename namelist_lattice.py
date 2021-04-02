@@ -19,7 +19,7 @@ cime = '{}/CESM/cesm2.2/cime/scripts'.format(expanduser('~'))
 
 
 class namelist_lattice:
-    def __init__(self, component):
+    def __init__(self, component, nofill=False):
         '''
         This class constructs a configuration lattice object, which organizes a lattice of
         positions in paramter space, intended for automating the running of several 
@@ -31,6 +31,13 @@ class namelist_lattice:
             The component that the namelists on this lattice are meant to apply to. If
             self.clone_case is called, the namelist changes will be made to 
             user_nl_{component}.
+        nofill : boolean
+            If True, the lattice will not fill, but only create points in parameter space 
+            as explicitly passed by the user. For example, if the expanded dimensions for
+            parameters 'a' and 'b' are [0, 1], [10, 20], then nofill=False will yeild clones
+            created for [(0, 10), (1, 10), (0, 20), (1, 20)], while nofill=True will yeild 
+            only [(0, 10), (1, 20)]. Thus, this option affects to number of total lattice 
+            points, though the dimension is unchanged. Defaults to False.
         '''
         self.component = component
         self.param_vectors = []
@@ -139,10 +146,13 @@ class namelist_lattice:
         lattice : (T, M) float array
             a array of T total M-dimensional points on the lattice
         '''
-        grid = np.meshgrid(*self.param_vectors)
-        points = np.vstack(list(map(np.ravel, grid)))
-        self._lattice = np.core.records.fromarrays(points, names=self.param_names)
-
+        if(not nofill):
+            grid = np.meshgrid(*self.param_vectors)
+            points = np.vstack(list(map(np.ravel, grid)))
+            self._lattice = np.core.records.fromarrays(points, names=self.param_names)
+        else:
+            points = np.vstack(self.param_vectors)
+            self.lattice = np.core.records.fromarrays(points, names=self.param_names)
 
     # ------------------------------------------------------------------------------
 
