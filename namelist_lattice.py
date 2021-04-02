@@ -40,6 +40,7 @@ class namelist_lattice:
             points, though the dimension is unchanged. Defaults to False.
         '''
         self.component = component
+        self.nofill = nofill
         self.param_vectors = []
         self.param_names = []
         self.xml_mask = []
@@ -127,9 +128,10 @@ class namelist_lattice:
 
         Parameters
         ----------
-        mask : bool array with dimensions matching lattice
+        mask : bool array with length matching the number of lattice points
         '''
-
+        
+        mask = np.array(mask, dtype=bool)
         self._lattice = self._lattice[mask]
 
 
@@ -146,19 +148,20 @@ class namelist_lattice:
         lattice : (T, M) float array
             a array of T total M-dimensional points on the lattice
         '''
-        if(not nofill):
+        
+        if(not self.nofill):
             grid = np.meshgrid(*self.param_vectors)
             points = np.vstack(list(map(np.ravel, grid)))
             self._lattice = np.core.records.fromarrays(points, names=self.param_names)
         else:
             points = np.vstack(self.param_vectors)
-            self.lattice = np.core.records.fromarrays(points, names=self.param_names)
+            self._lattice = np.core.records.fromarrays(points, names=self.param_names)
 
     # ------------------------------------------------------------------------------
 
 
     def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, 
-                      clone_prefix=None, cime_dir=cime, overwrite=False, clean_all=False):
+                      clone_prefix=None, clone_sfx=None, cime_dir=cime, overwrite=False, clean_all=False):
         '''
         clone the root_case CESM CIME case per each point on the lattice, and edit the
         namelist file at cloned_case/user_nl_{self.component} with the content of that 
@@ -180,6 +183,11 @@ class namelist_lattice:
             {top_clone_dir}/{clone_prex}_{P1}{V1}_{P2}{V2}_....
             where P are the names of the namelist settings on the lattice (constant for all
             clones), and v are their values (unique for each clone)
+        clone_sfx : string array
+            list of strings containing content to append to end of each clone directory. Must
+            be same length as number of points in lattice. Default is None, in which case, each 
+            string will be a concatenation of each parameter value of each clone's position in 
+            the lattice parameter space, separated by '__'.
         cime_dir : string
             Location of the cime/scripts directory within cesm2.2
         overwrite : bool
@@ -238,16 +246,33 @@ class namelist_lattice:
             params = self._lattice[i]
             print('\n --------------- creating clone with {} = {} ---------------\n'.format(
                    namelists, params))
-            
-            sfx = '__'.join(['{}_{}'.format(namelists[i], params[i]) for i in range(len(params))])
+       
+            clone_sfx = np.atleast_1d(clone_sfx)
+            if(len(clone_sfx) != 1 and len(clone_sfx) != len(self._lattice)):
+                raise RuntimeError('clone_sfx must be a single string, or length of'\
+                                   'clone_sfx must match number of lattice points')
+            if clone_sfx is None:
+                sfx = '__'.join(['{}_{}'.format(namelists[j], params[j]) for j in range(len(params))])
+            elif(len(clone_sfx) > 1):
+                sfx = clone_sfx[i]
+            else:
+                sfx = clone_sfx
+
             new_case = '{}/{}__{}'.format(top_clone_dir, clone_prefix, sfx)
+            new_case_out = '{}/{}__{}'.format(top_output_dir, clone_prefix, sfx)
             
             # check that this clone does not already exist; if so, handle
             if(os.path.isdir(new_case) and overwrite == False):
                 raise RuntimeError('clone at {} already exists!'.format(new_case)) 
-            elif(os.path.isdir(new_case) and overwrite == True):
+            if(os.path.isdir(new_case_out) and overwrite == False):
+                raise RuntimeError('output at {} already exists!'.format(new_case_out)) 
+            if(os.path.isdir(new_case) and overwrite == True):
                 print('overwrite option set to True; overwriting existing case at {}'.format(new_case))
                 shutil.rmtree(new_case)
+            if(os.path.isdir(new_case_out) and overwrite == True):
+                print('overwrite option set to True; overwriting existing output at {}'.format(
+                                                                                        new_case_out))
+                shutil.rmtree(new_case_out)
 
             # call the cloning script
             if(top_output_dir is not None):
@@ -281,18 +306,25 @@ class namelist_lattice:
                     if(self.xml_mask[j] == 0):
                         # write parameter choice to user_nl_{self.component}
                         f.write('{} = {}\n'.format(namelists[j], params[j]))
-                    else::
+                    else:
                         # write parameter choice to env_run.xml via xmlchange
-                        xmlcmd = '{}/xmlchange {} {}={}'.format(new_case, namelists[j], params[j])
+                        os.chdir(new_case)
+                        xmlcmd = '{}/xmlchange {}={}'.format(new_case, namelists[j], params[j])
                         subprocess.run(xmlcmd.split(' '))
 
 
     # ------------------------------------------------------------------------------
 
 
-    def submit_clone_runs(self):
+    def submit_clone_runs(self, dry=False):
         '''
         Submit runs of the cloned cases created by self.create_clones()
+
+        Parameters
+        ----------
+        dry : boolean
+            Whether or not to do a dry run, which just prints the location of each
+            submission script which is about to be called. Defaults to False.
         '''
         
         if(len(self.clone_dirs) == 0):
@@ -304,7 +336,10 @@ class namelist_lattice:
             submit = '{}/case.submit'.format(clone)
             
             print('\n\n=============== submitting job from {} ===============\n'.format(submit))
-            subprocess.run(submit)
+            if(dry):
+                print(submit)
+            else:
+                subprocess.run(submit)
 
 
     # ------------------------------------------------------------------------------
