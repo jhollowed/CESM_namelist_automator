@@ -124,7 +124,7 @@ class namelist_lattice:
                 # remove whitespace
                 name = ''.join(name.split())
                 names[i] = name
-                values[i] = ''.join(name.split())
+                values[i] = ''.join(values[i].split())
                 
                 assert group_labels[i] is not None, 'group_label must be passed if group is True'
                 assert group_labels[i] not in self.paramgroup_labels, \
@@ -325,17 +325,19 @@ class namelist_lattice:
             values = self._lattice[i]
             print('\n --------------- creating clone with {} = {} ---------------\n'.format(
                    params, values))
-       
-            clone_sfx = np.atleast_1d(clone_sfx)
-            if(len(clone_sfx) != 1 and len(clone_sfx) != len(self._lattice)):
-                raise RuntimeError('clone_sfx must be a single string, or length of'\
-                                   'clone_sfx must match number of lattice points')
+            
+            # set clone directory suffix
             if clone_sfx is None:
                 sfx = '__'.join(['{}_{}'.format(params[j], values[j]) for j in range(len(values))])
-            elif(len(clone_sfx) > 1):
-                sfx = clone_sfx[i]
-            else:
-                sfx = clone_sfx
+            else: 
+                clone_sfx = np.atleast_1d(clone_sfx)
+                if(len(clone_sfx) != 1 and len(clone_sfx) != len(self._lattice)):
+                    raise RuntimeError('clone_sfx must be a single string, or length of'\
+                                       'clone_sfx must match number of lattice points')
+                if(len(clone_sfx) > 1):
+                    sfx = clone_sfx[i]
+                else:
+                    sfx = clone_sfx[0]
 
             new_case = '{}/{}__{}'.format(top_clone_dir, clone_prefix, sfx)
             new_case_out = '{}/{}__{}'.format(top_output_dir, clone_prefix, sfx)
