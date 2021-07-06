@@ -333,12 +333,21 @@ class namelist_lattice:
         for i in range(len(self._lattice)):
             
             values = self._lattice[i]
+            
+            # build list of values which replaces commas in parameter groups with underscores
+            # (for safer directory, file naming
+            print_values = list(values)
+            for j in range(len(print_values)):
+                if isinstance(print_values[j], str):
+                    print_values[j] = print_values[j].replace(',', '_') 
+            
             print('\n --------------- creating clone with {} = {} ---------------\n'.format(
                    print_params, values))
             
             # set clone directory suffix
             if clone_sfx is None:
-                sfx = '__'.join(['{}_{}'.format(print_params[j], values[j]) for j in range(len(values))])
+                sfx = '__'.join(['{}_{}'.format(print_params[j], print_values[j]) 
+                                 for j in range(len(values))])
             else: 
                 clone_sfx = np.atleast_1d(clone_sfx)
                 if(len(clone_sfx) != 1 and len(clone_sfx) != len(self._lattice)):
