@@ -392,7 +392,7 @@ class namelist_lattice:
             with open('{}/user_nl_{}'.format(new_case, self.component), 'a') as f:
                 if not nl.endswith('\n'):
                     f.write('\n')
-                f.write('! Following entries written by CESM_namelist_automator')
+                f.write('! Following entries written by CESM_namelist_automator\n')
                 
                 for j in range(len(params)):
                     
