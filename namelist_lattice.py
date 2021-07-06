@@ -98,7 +98,8 @@ class namelist_lattice:
             If this is True, the input name must be a single string, containing multiple namelist 
             settings, separated by commas, e.g. 'p1,p2,p3'. Each input value must similarly be a
             string, with values separated by commas. When split on commas, the number of elements 
-            in the values string must match the number elements in the names string. 
+            in the values string must match the number elements in the names string. Whitespaces 
+            will be stripped from the strings in any case.
             If True, group_labels must be passed.
         group_labels : string or (N,) string array
             Label to give the group, so that automatically-generated clone directory names do not 
@@ -120,6 +121,11 @@ class namelist_lattice:
                                group=True?'.format(name))
             
             if(group):
+                # remove whitespace
+                name = ''.join(name.split())
+                names[i] = name
+                values[i] = ''.join(name.split())
+                
                 assert group_labels[i] is not None, 'group_label must be passed if group is True'
                 assert group_labels[i] not in self.paramgroup_labels, \
                        'group_label with name {} already exists in the lattice'.format(group_labels[i])
