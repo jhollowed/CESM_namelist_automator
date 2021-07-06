@@ -288,6 +288,16 @@ class namelist_lattice:
             raise RuntimeError('Root case {} does not exist'.format(root_case))
         
         params = self._lattice.dtype.names
+
+        # build list of parameter names which abbreviates each parameter group with 
+        # its assocaited label
+        print_params = np.array(params)
+        print_params[np.where(self.paramgroup_mask)] = self.paramgroup_labels
+
+        # build list of all parameter names, expanding parameter groups
+        all_params = np.hstack([np.array(params)[np.where(1-np.array(self.paramgroup_mask))], 
+                                np.ravel([s.split(',') for s in 
+                                np.array(self.param_names)[np.where(self.paramgroup_mask)]])]) 
         
         # enforce defaults
         if(top_clone_dir is None):
@@ -324,11 +334,11 @@ class namelist_lattice:
             
             values = self._lattice[i]
             print('\n --------------- creating clone with {} = {} ---------------\n'.format(
-                   params, values))
+                   print_params, values))
             
             # set clone directory suffix
             if clone_sfx is None:
-                sfx = '__'.join(['{}_{}'.format(params[j], values[j]) for j in range(len(values))])
+                sfx = '__'.join(['{}_{}'.format(print_params[j], values[j]) for j in range(len(values))])
             else: 
                 clone_sfx = np.atleast_1d(clone_sfx)
                 if(len(clone_sfx) != 1 and len(clone_sfx) != len(self._lattice)):
@@ -368,13 +378,12 @@ class namelist_lattice:
             # --- edit the user_nl_{component} file ---
             
             # purge current occurences of the parameters present in the lattice
-            with open('{}/user_nl_{}'.format(new_case, self.component), 'r+') as f:
-                
+            with open('{}/user_nl_{}'.format(new_case, self.component), 'r+') as f: 
                 entries = f.readlines()
                 f.seek(0)
                 for e in entries:
                     param = ''.join(e.split()).split('=')[0]
-                    if(param not in params): 
+                    if(param not in all_params): 
                         f.write(e)
                 f.truncate()
                 nl = f.read()
