@@ -8,6 +8,7 @@ from pathlib import Path
 from os.path import expanduser
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import warnings
 
 mpl.rcParams['axes.xmargin'] = 0.1
 mpl.rcParams['axes.ymargin'] = 0.1
@@ -44,6 +45,8 @@ class namelist_lattice:
         self.param_vectors = []
         self.param_names = []
         self.xml_mask = []
+        self.paramgroup_mask = []
+        self.paramgroup_labels = []
         self.clone_dirs = []
         self._lattice = None
     
@@ -58,13 +61,14 @@ class namelist_lattice:
     # ------------------------------------------------------------------------------
 
 
-    def expand(self, names, limits=None, nsamples=None, values=None, xmlchange=False):
+    def expand(self, names, limits=None, nsamples=None, values=None, 
+               xmlchange=False, group=False, group_labels=None):
         '''
         Adds N dimensions to the lattice, and popultes each with parameter samples
 
         Parameters
         ----------
-        name : string or (N,) string array
+        names : string or (N,) string array
             Name of the parameters
         limits : (2,) or (N,2) float array, optional
             Upper and lower limits for each paramter
@@ -77,14 +81,69 @@ class namelist_lattice:
             in a CIME case by xmlchange (i.e. the parameter is stored in env_run.xml). 
             Defaults to False, in which case it is assumed that the parameter is stored
             in user_nl_{self.component}
-        '''
-      
-        errstr = 'either (\'values\') or (\'limits\' and \'nsamples\') must be passed, not both'
-       
-        if(values is None):
-            assert limits is not None and nsamples is not None, err
+        group : boolean
+            Whether or not to interpret the pased dimensions as lists of namelist settings 
+            which should be treated as a sinle point in the lattice. For example, if the call
+            is
             
-            names = np.atleast_1d(names)
+            expand(names='p1,p2,p3', values=['2,2,2', '4,4,4'], group=True, group_labels='group1')
+
+            then the three parameters p1, p2, and p3 are treated as occupying a single dimension
+            in the lattice as a trio, with only two possibilities for their values, all equaling 5, 
+            or all equaling 6. Alternatively, think of this as a constraint that points on the 
+            lattice can only exist if they intersect (5,5,5) or (6,6,6) in the p1,p2,p3 plane. This
+            is useful in the case that, e.g., a set of diffusion parameters are desired to be set 
+            in unison to an 2nd order and a 4th order method.
+
+            If this is True, the input name must be a single string, containing multiple namelist 
+            settings, separated by commas, e.g. 'p1,p2,p3'. Each input value must similarly be a
+            string, with values separated by commas. When split on commas, the number of elements 
+            in the values string must match the number elements in the names string. 
+            If True, group_labels must be passed.
+        group_labels : string or (N,) string array
+            Label to give the group, so that automatically-generated clone directory names do not 
+            become obnoxious. Required if group is True.
+        '''
+     
+        # ---------- check user input ----------
+
+        names = np.atleast_1d(names)
+        group_labels = np.atleast_1d(group_labels)
+        for i in range(len(names)):
+            name = names[i]
+            
+            assert name not in self.param_names, \
+            'parameter with name {} already exists in lattice'.format(name)
+            
+            if ',' in name and not group:
+                warnings.warn('comma detected in name {}; maybe expand should have received \
+                               group=True?'.format(name))
+            
+            if(group):
+                assert group_labels[i] is not None, 'group_label must be passed if group is True'
+                assert group_labels[i] not in self.paramgroup_labels, \
+                       'group_label with name {} already exists in the lattice'.format(group_labels[i])
+                
+                all_groupparams = np.ravel([s.split(',') for s in 
+                                  np.array(self.param_names)[np.where(self.paramgroup_mask)]]).tolist()
+                for groupparam in name.split(','):
+                    assert groupparam not in all_groupparams, \
+                           'parameter with name {} aleady exists in the lattice'.format(groupparam)
+
+                assert len(np.unique(name.split(','))) == len(name.split(',')), \
+                       'parameter group {} contains duplicates'.format(name) 
+        
+        call_err = 'either (\'values\') or (\'limits\' and \'nsamples\') must be passed, not both'
+       
+
+        # ---------- insert parameter into lattice ----------
+
+        if(values is None):
+            assert limits is not None and nsamples is not None, call_err
+            assert group is False, 'auto-generation of values from limits can\
+                                    not be used if group=True; use values'
+
+            # ----- values beign generated by limits
             limits = np.atleast_2d(limits)
             nsamples = np.atleast_1d(nsamples)
             
@@ -98,22 +157,36 @@ class namelist_lattice:
                 self.param_vectors.append(vals)
                 
         else:
-            assert limits is None and nsamples is None, err
+            assert limits is None and nsamples is None, call_err
             
-            names = np.atleast_1d(names)
+            # ----- values explicitly defined by user
             values = np.atleast_2d(values)
             
             assert len(names) == len(values),\
                    'args \'names\'  and \'values\' must be of equal length'
+            if(group):
+                for i in range(len(names)):
+                    for j in range(len(values[i])):
+                        assert len(names[i].split(',')) == len(values[i][j].split(',')), \
+                        'mismatch in number of group parameters ({}) and values ({})'.format(
+                        names[i], values[i][j])
 
             # build new dimensions
             self.param_names.extend(names)
             self.param_vectors.extend(values)
 
+        # flag any parameters to be updated via xmlchange
         if(xmlchange):
-            self.xml_mask.append(1)
+            self.xml_mask.extend([1]*len(names))
         else:
-            self.xml_mask.append(0)
+            self.xml_mask.extend([0]*len(names))
+        
+        # flag any parameter groups
+        if(group):
+            self.paramgroup_mask.extend([1]*len(names))
+            self.paramgroup_labels.extend(group_labels)
+        else:
+            self.paramgroup_mask.extend([0]*len(names))
         
         # build the lattice
         self._build_lattice()
@@ -208,7 +281,7 @@ class namelist_lattice:
         if(not os.path.isdir(root_case)):
             raise RuntimeError('Root case {} does not exist'.format(root_case))
         
-        namelists = self._lattice.dtype.names
+        params = self._lattice.dtype.names
         
         # enforce defaults
         if(top_clone_dir is None):
@@ -243,16 +316,16 @@ class namelist_lattice:
         # clone the root case per lattice point
         for i in range(len(self._lattice)):
             
-            params = self._lattice[i]
+            values = self._lattice[i]
             print('\n --------------- creating clone with {} = {} ---------------\n'.format(
-                   namelists, params))
+                   params, values))
        
             clone_sfx = np.atleast_1d(clone_sfx)
             if(len(clone_sfx) != 1 and len(clone_sfx) != len(self._lattice)):
                 raise RuntimeError('clone_sfx must be a single string, or length of'\
                                    'clone_sfx must match number of lattice points')
             if clone_sfx is None:
-                sfx = '__'.join(['{}_{}'.format(namelists[j], params[j]) for j in range(len(params))])
+                sfx = '__'.join(['{}_{}'.format(params[j], values[j]) for j in range(len(values))])
             elif(len(clone_sfx) > 1):
                 sfx = clone_sfx[i]
             else:
@@ -293,7 +366,7 @@ class namelist_lattice:
                 f.seek(0)
                 for e in entries:
                     param = ''.join(e.split()).split('=')[0]
-                    if(param not in namelists): 
+                    if(param not in params): 
                         f.write(e)
                 f.truncate()
                 nl = f.read()
@@ -302,15 +375,25 @@ class namelist_lattice:
             with open('{}/user_nl_{}'.format(new_case, self.component), 'a') as f:
                 if not nl.endswith('\n'):
                     f.write('\n')
+                
                 for j in range(len(params)):
-                    if(self.xml_mask[j] == 0):
-                        # write parameter choice to user_nl_{self.component}
-                        f.write('{} = {}\n'.format(namelists[j], params[j]))
-                    else:
+                    
+                    if(self.paramgroup_mask[j] == 1):
+                        # write all parameter choices in this group to user_nl_{self.component}
+                        group_params = params[j].split(',')
+                        group_values = values[j].split(',')
+                        for k in range(len(group_params)):
+                            f.write('{} = {}\n'.format(group_params[k], group_values[k]))
+                    
+                    if(self.xml_mask[j] == 1):
                         # write parameter choice to env_run.xml via xmlchange
                         os.chdir(new_case)
-                        xmlcmd = '{}/xmlchange {}={}'.format(new_case, namelists[j], params[j])
+                        xmlcmd = '{}/xmlchange {}={}'.format(new_case, params[j], values[j])
                         subprocess.run(xmlcmd.split(' '))
+                    
+                    else:
+                        # write parameter choice to user_nl_{self.component}
+                        f.write('{} = {}\n'.format(params[j], values[j]))
 
 
     # ------------------------------------------------------------------------------
