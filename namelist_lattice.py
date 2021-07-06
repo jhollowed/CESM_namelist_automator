@@ -392,25 +392,38 @@ class namelist_lattice:
             with open('{}/user_nl_{}'.format(new_case, self.component), 'a') as f:
                 if not nl.endswith('\n'):
                     f.write('\n')
+                f.write('! Following entries written by CESM_namelist_automator')
                 
                 for j in range(len(params)):
                     
+                    # ---------- IS PARAMETER GROUP
                     if(self.paramgroup_mask[j] == 1):
-                        # write all parameter choices in this group to user_nl_{self.component}
                         group_params = params[j].split(',')
                         group_values = values[j].split(',')
-                        for k in range(len(group_params)):
-                            f.write('{} = {}\n'.format(group_params[k], group_values[k]))
+                        
+                        if(self.xml_mask[j] == 1):
+                            # write all parameter choices in this group to env_run.xml via xmlchange
+                            os.chdir(new_case)
+                            for k in range(len(group_params)):
+                                xmlcmd = '{}/xmlchange {}={}'.format(
+                                         new_case, group_params[k], group_values[k])
+                                subprocess.run(xmlcmd.split(' '))
+                        else:
+                            # write all parameter choices in this group to user_nl_{self.component}
+                            for k in range(len(group_params)):
+                                f.write('{} = {}\n'.format(group_params[k], group_values[k]))
                     
-                    if(self.xml_mask[j] == 1):
-                        # write parameter choice to env_run.xml via xmlchange
-                        os.chdir(new_case)
-                        xmlcmd = '{}/xmlchange {}={}'.format(new_case, params[j], values[j])
-                        subprocess.run(xmlcmd.split(' '))
-                    
-                    else:
-                        # write parameter choice to user_nl_{self.component}
-                        f.write('{} = {}\n'.format(params[j], values[j]))
+                    # ---------- IS SINGLE PARAMETER
+                    else: 
+                        if(self.xml_mask[j] == 1):
+                            # write parameter choice to env_run.xml via xmlchange
+                            os.chdir(new_case)
+                            xmlcmd = '{}/xmlchange {}={}'.format(new_case, params[j], values[j])
+                            subprocess.run(xmlcmd.split(' '))                    
+                        
+                        else:
+                            # write parameter choice to user_nl_{self.component}
+                            f.write('{} = {}\n'.format(params[j], values[j]))
 
 
     # ------------------------------------------------------------------------------
