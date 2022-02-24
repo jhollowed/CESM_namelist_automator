@@ -239,7 +239,7 @@ class namelist_lattice:
 
 
     def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, cime_dir=None, 
-                      clone_prefix=None, clone_sfx=None, overwrite=False, clean_all=False):
+                      clone_prefix=None, clone_sfx=None, overwrite=False, clean_all=False, stdout=None):
         '''
         clone the root_case CESM CIME case per each point on the lattice, and edit the
         namelist file at cloned_case/user_nl_{self.component} with the content of that 
@@ -279,12 +279,22 @@ class namelist_lattice:
             shouldn't change it. Definitely don't change it if top_clone_dir and top_output_dir 
             were not passed (unless you enjoy rebuilding your CESM cases, or you know exactly what
             you're doing).
+        stdout : string, optional
+            File at which to send stdout for calls to CIME utilities. Defaults to None, in which 
+            case all output is sent to the terminal.
         '''
 
         if(self._lattice is None):
             raise RuntimeError('Lattice must first be built by calling expand()')
         if(not os.path.isdir(root_case)):
             raise RuntimeError('Root case {} does not exist'.format(root_case))
+       
+        # open file for stdout if specified
+        if(stdout is not None):
+            try: os.remove(stdout)
+            except FileNotFoundError: pass
+            self.stdoutf = open(stdout, 'w+')
+            self.stdout = stdout
         
         params = self._lattice.dtype.names
 
@@ -380,7 +390,11 @@ class namelist_lattice:
             else:
                 cmd = '{}/create_clone --case {} --clone {} --keepexe'.format(
                        cime_dir, new_case, root_case)
-            subprocess.run(cmd.split(' '))
+            # pipe output to file if specified
+            if(self.stdout is not None):
+                subprocess.run(cmd.split(' '), stdout=self.stdoutf)
+            else:
+                subprocess.run(cmd.split(' '))
             self.clone_dirs.append(new_case)
             
             # --- edit the user_nl_{component} file ---
@@ -415,7 +429,11 @@ class namelist_lattice:
                             for k in range(len(group_params)):
                                 xmlcmd = '{}/xmlchange {}={}'.format(
                                          new_case, group_params[k], group_values[k])
-                                subprocess.run(xmlcmd.split(' '))
+                                # pipe output to file if specified
+                                if(self.stdout is not None):
+                                    subprocess.run(xmlcmd.split(' '), stdout=self.stdoutf)
+                                else:
+                                    subprocess.run(cmd.split(' '))
                         else:
                             # write all parameter choices in this group to user_nl_{self.component}
                             for k in range(len(group_params)):
@@ -427,7 +445,11 @@ class namelist_lattice:
                             # write parameter choice to env_run.xml via xmlchange
                             os.chdir(new_case)
                             xmlcmd = '{}/xmlchange {}={}'.format(new_case, params[j], values[j])
-                            subprocess.run(xmlcmd.split(' '))                    
+                            # pipe output to file if specified
+                            if(self.stdout is not None):
+                                subprocess.run(xmlcmd.split(' '), stdout=self.stdoutf)
+                            else:
+                                subprocess.run(xmlcmd.split(' '))                    
                         
                         else:
                             # write parameter choice to user_nl_{self.component}
@@ -460,7 +482,11 @@ class namelist_lattice:
             if(dry):
                 print(submit)
             else:
-                subprocess.run(submit)
+                # pipe output to file if specified
+                if(self.stdout is not None):
+                    subprocess.run(submit, stdout=self.stdoutf)
+                else:
+                    subprocess.run(submit)
 
 
     # ------------------------------------------------------------------------------
