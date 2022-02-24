@@ -1,4 +1,4 @@
-# CESM_namelist_automator
+# CIME_namelist_automator
 
 readme under construction...
 
