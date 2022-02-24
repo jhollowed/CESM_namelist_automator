@@ -12,7 +12,6 @@ import warnings
 
 mpl.rcParams['axes.xmargin'] = 0.1
 mpl.rcParams['axes.ymargin'] = 0.1
-cime = '{}/CESM/cesm2.2/cime/scripts'.format(expanduser('~'))
 
 # ==========================================================================================
 # ==========================================================================================
@@ -239,8 +238,8 @@ class namelist_lattice:
     # ------------------------------------------------------------------------------
 
 
-    def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, 
-                      clone_prefix=None, clone_sfx=None, cime_dir=cime, overwrite=False, clean_all=False):
+    def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, cime_dir=None, 
+                      clone_prefix=None, clone_sfx=None, overwrite=False, clean_all=False):
         '''
         clone the root_case CESM CIME case per each point on the lattice, and edit the
         namelist file at cloned_case/user_nl_{self.component} with the content of that 
@@ -268,7 +267,7 @@ class namelist_lattice:
             string will be a concatenation of each parameter value of each clone's position in 
             the lattice parameter space, separated by '__'.
         cime_dir : string
-            Location of the cime/scripts directory within cesm2.2
+            Location of the cime/scripts directory
         overwrite : bool
             Whether or not to overwrite preexisting clone cases found in top_clone_dir with 
             name conflicts. Default is False, in which case an error will be thrown in this 
