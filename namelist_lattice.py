@@ -60,7 +60,7 @@ class namelist_lattice:
     # ------------------------------------------------------------------------------
 
 
-    def expand(self, names, limits=None, nsamples=None, values=None, 
+    def expand(self, names, limits=None, nsamples=None, values=None, logspace=False, 
                xmlchange=False, group=False, group_labels=None):
         '''
         Adds N dimensions to the lattice, and popultes each with parameter samples
@@ -73,6 +73,8 @@ class namelist_lattice:
             Upper and lower limits for each paramter
         nsamples : int or (N,) int array, optional
             number of samples to insert between the stated limits for each parameter
+        logspace : bool, optional
+            whether or not to sample values in logspace, if using limits,nsamples
         values : (N,) float array, or list of float lists, optional
             number of samples to insert between the stated limits for each parameter
         xmlchange : boolean
@@ -158,7 +160,10 @@ class namelist_lattice:
             # build new dimensions
             self.param_names.extend(names)
             for i in range(len(names)):
-                vals = np.linspace(limits[i][0], limits[i][1], nsamples[i])
+                if(logspace):
+                    vals = np.linspace(np.log10(limits[i][0]), np.log10(limits[i][1]), nsamples[i])
+                else:
+                    vals = np.linspace(limits[i][0], limits[i][1], nsamples[i])
                 self.param_vectors.append(vals)
                 
         else:
