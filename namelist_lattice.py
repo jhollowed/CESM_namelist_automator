@@ -349,12 +349,17 @@ class namelist_lattice:
             values = self._lattice[i]
             
             # build list of values which replaces commas in parameter groups with underscores
-            # (for safer directory, file naming
+            # and removes '+' in scientific notaiton for numbers >= 1e5
+            # (for safer directory, file naming)
             print_values = list(values)
             for j in range(len(print_values)):
                 if isinstance(print_values[j], str):
                     print_values[j] = print_values[j].replace(',', '_') 
-            
+                elif isinstance(print_values[j], int) or isinstance(print_values[j], int):
+                    if(print_values[j] >= 1e5):
+                        print_values[j] = '%e' % print_values[j]
+                        print_values[j] = print_values[j].replace('+', '')
+ 
             print('\n --------------- creating clone with {} = {} ---------------\n'.format(
                    print_params, values))
             
