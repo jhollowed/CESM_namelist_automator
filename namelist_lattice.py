@@ -300,6 +300,9 @@ class namelist_lattice:
             except FileNotFoundError: pass
             self.stdoutf = open(stdout, 'w+')
             self.stdout = stdout
+        else:
+            self.stdout = None
+            self.stdoutf = None
         
         params = self._lattice.dtype.names
 
@@ -406,6 +409,14 @@ class namelist_lattice:
             else:
                 subprocess.run(cmd.split(' '))
             self.clone_dirs.append(new_case)
+
+            # force clone to match root in RESUBMIT (doesn't happen by default)
+            os.chdir(root_case)
+            resubmits = subprocess.check_output('{}/xmlquery RESUBMIT'.format(root_case).split(' '))
+            resubmits = int(resubmits.split()[-1])
+            os.chdir(new_case)
+            subprocess.run('{}/xmlchange RESUBMIT={}'.format(new_case, resubmits).split(' '), 
+                           stdout=self.stdoutf)
             
             # --- edit the user_nl_{component} file ---
             
