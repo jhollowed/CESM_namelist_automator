@@ -32,7 +32,7 @@ def lattice_submission_example():
     cime_dir = '/home/hollowed/CESM/cesm2.2/cime/scripts'
     clone_prefix = 'cam'
 
-    lattice.create_clones(root_case, top_clone_dir, top_output_dir, clone_prefix, cime_dir)
+    lattice.create_clones(root_case, top_clone_dir, top_output_dir, cime_dir, clone_prefix)
     lattice.submit_clone_runs()
 
 

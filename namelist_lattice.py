@@ -13,13 +13,13 @@ import warnings
 mpl.rcParams['axes.xmargin'] = 0.1
 mpl.rcParams['axes.ymargin'] = 0.1
 
-# ==========================================================================================
-# ==========================================================================================
 
+# ==========================================================================================
+# ==========================================================================================
 
 
 class namelist_lattice:
-    def __init__(self, component, nofill=False):
+    def __init__(self, component='eam', nofill=False):
         '''
         This class constructs a configuration lattice object, which organizes a lattice of
         positions in paramter space, intended for automating the running of several 
@@ -27,11 +27,11 @@ class namelist_lattice:
 
         Parameters
         ----------
-        component : string
+        component : string, optional
             The component that the namelists on this lattice are meant to apply to. If
             self.clone_case is called, the namelist changes will be made to 
-            user_nl_{component}.
-        nofill : boolean
+            user_nl_{component}. Defaults to 'eam'.
+        nofill : boolean, optional
             If True, the lattice will not fill, but only create points in parameter space 
             as explicitly passed by the user. For example, if the expanded dimensions for
             parameters 'a' and 'b' are [0, 1], [10, 20], then nofill=False will yeild clones
@@ -243,8 +243,9 @@ class namelist_lattice:
     # ------------------------------------------------------------------------------
 
 
-    def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, cime_dir=None, 
-                      clone_prefix=None, clone_sfx=None, overwrite=False, clean_all=False, stdout=None):
+    def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, cime_dir=None,  
+                      clone_prefix=None, clone_sfx=None, overwrite=False, clean_all=False, 
+                      stdout=None, resubmits=0):
         '''
         clone the root_case CESM CIME case per each point on the lattice, and edit the
         namelist file at cloned_case/user_nl_{self.component} with the content of that 
@@ -260,6 +261,8 @@ class namelist_lattice:
         top_output_dir : string
             The top directory in which all clones will output to after being run. Default is 
             None, in which case the output directory of the root case is used.
+        cime_dir : string
+            Location of the cime/scripts directory
         clone_prefix : string
             prefix of each clone case. Default is None, in which case the name of the 
             root case will be used. The full cloned case location is then
@@ -271,8 +274,6 @@ class namelist_lattice:
             be same length as number of points in lattice. Default is None, in which case, each 
             string will be a concatenation of each parameter value of each clone's position in 
             the lattice parameter space, separated by '__'.
-        cime_dir : string
-            Location of the cime/scripts directory
         overwrite : bool
             Whether or not to overwrite preexisting clone cases found in top_clone_dir with 
             name conflicts. Default is False, in which case an error will be thrown in this 
@@ -287,6 +288,9 @@ class namelist_lattice:
         stdout : string, optional
             File at which to send stdout for calls to CIME utilities. Defaults to None, in which 
             case all output is sent to the terminal.
+        resubmits : int, optional
+            Number of resubmits for clones. Unfortunately, this currently may not be inherited from
+            the root case, and should be set manually here. Default is 0.
         '''
 
         if(self._lattice is None):
@@ -411,9 +415,10 @@ class namelist_lattice:
             self.clone_dirs.append(new_case)
 
             # force clone to match root in RESUBMIT (doesn't happen by default)
-            os.chdir(root_case)
-            resubmits = subprocess.check_output('{}/xmlquery RESUBMIT'.format(root_case).split(' '))
-            resubmits = int(resubmits.split()[-1])
+            #os.chdir(root_case)
+            #resubmits = subprocess.check_output('{}/xmlquery RESUBMIT'.format(root_case).split(' '))
+            #resubmits = int(resubmits.split()[-1])
+            print('Setting RESUBMIT={}'.format(resubmits))
             os.chdir(new_case)
             subprocess.run('{}/xmlchange RESUBMIT={}'.format(new_case, resubmits).split(' '), 
                            stdout=self.stdoutf)
