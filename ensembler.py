@@ -1,6 +1,7 @@
 import os
 import pdb
 import sys
+import glob
 import pathlib
 
 sys.path.append('{}/.'.format(pathlib.Path(__file__).parent.absolute()))
@@ -28,7 +29,7 @@ class ensembler:
     
     # ------------------------------------------------------------------------------
 
-    def add_members(self, ic_dir):
+    def add_members(self, ic_dir, globstr=None):
         '''
 
         Parameters
@@ -36,19 +37,29 @@ class ensembler:
         ic_root : string
             path to directory containing initial condition files (netcdf). All files present
             in this directory will be assumed to be intial conditions for ensemble members, 
-            regardless of exrtension. subdirectories willbe ignored.
+            regardless of exrtension. Subdirectories will be ignored.
+        globstr : str
+            glob string to apply to files in the ic_root directory; only files matching this
+            pattern will be included to generate members for the ensemble. Pattern is applied 
+            to file names only, not full path. Defaults to None, in which case no filtering is
+            applied.
         '''
+        if globstr is not None: 
+            globstr = '{}/{}'.format(ic_dir, globstr)
+        else: 
+            globstr = '{}/*'.format(ic_dir)
+        ic_files = glob.glob(globstr)
+        ic_files = ['\"{}\"'.format(f) for f in ic_files if not os.path.isdir(f)]
+        ic_files = sorted(ic_files)
         
-        ic_files = [os.path.join(ic_root, f) for f in \
-                    os.listdir(ic_root) if os.path.isfile(os.path.join(ic_root, f))]
         self.lattice.expand('NCDATA', values=ic_files)
         self.N = len(ic_files)
 
     # ------------------------------------------------------------------------------
 
-    def clone_members(self, root_case, top_clone_dir, cime_dir,
-                      clone_prefix=None, clone_sfx=None, overwrite=False, clean_all=False, 
-                      stdout=None, resubmits=0):
+    def create_members(self, root_case, top_clone_dir, top_output_dir, cime_dir,
+                       clone_prefix=None, overwrite=False, clean_all=False, 
+                       stdout=None, resubmits=0):
         '''
         
         Parameters
@@ -85,9 +96,9 @@ class ensembler:
             Number of resubmits for clones. Unfortunately, this currently may not be inherited from
             the root case, and should be set manually here. Default is 0.
         '''
-        ens_sfx = ['ens{}'.format(i+1) for i in range(self.N)]
-        self.nl.create_clones(root_case, top_clone_dir, top_output_dir, cime_dir, clone_prefix, 
-                              ens_sfx, overwrite, clean_all, stdout, resubmits)
+        ens_sfx = ['ens{:02d}'.format(i+1) for i in range(self.N)]
+        self.lattice.create_clones(root_case, top_clone_dir, top_output_dir, cime_dir, clone_prefix, 
+                                   ens_sfx, overwrite, clean_all, stdout, resubmits)
     
     # ------------------------------------------------------------------------------
     
