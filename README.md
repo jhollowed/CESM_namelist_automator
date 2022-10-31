@@ -1,4 +1,4 @@
-# CIME_namelist_automator
+# cime_ensembler_automator
 
 readme under construction...
 
