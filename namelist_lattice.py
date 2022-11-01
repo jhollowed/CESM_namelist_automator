@@ -262,7 +262,7 @@ class namelist_lattice:
 
     def create_clones(self, root_case, top_clone_dir=None, top_output_dir=None, cime_dir=None,  
                       clone_prefix=None, clone_sfx=None, overwrite=False, clean_all=False, 
-                      stdout=None, resubmits=0):
+                      stdout=None, resubmits=0, read_existing_clones=False):
         '''
         clone the root_case CESM CIME case per each point on the lattice, and edit the
         namelist file at cloned_case/user_nl_{self.component} with the content of that 
@@ -308,12 +308,23 @@ class namelist_lattice:
         resubmits : int, optional
             Number of resubmits for clones. Unfortunately, this currently may not be inherited from
             the root case, and should be set manually here. Default is 0.
+        read_existing_clones : bool, optional
+            If True, then instead of throwing an error or overwriting currently existing cases, 
+            simply add them to self.clone_dirs, and continue. Useful if needing to call a method
+            of this class that requires self.clone_dirs to be populated, when clones have already
+            been created, and do not need to be made again (e.g. resubmit_hung_clone_runs). 
+            Defaults to False.
+            If True, then overwrite and clean_all must both be False. This is enforced.
         '''
 
         if(self._lattice is None):
             raise RuntimeError('Lattice must first be built by calling expand()')
         if(not os.path.isdir(root_case)):
             raise RuntimeError('Root case {} does not exist'.format(root_case))
+
+        if(read_existing_clones):
+            assert overwrite == False and clean_all == False, ERRC+'if read_existing_clones=True, '\
+                                                   'must have overwrite=False, clean_all=False'+ERRC 
        
         # open file for stdout if specified
         if(stdout is not None):
@@ -384,9 +395,6 @@ class namelist_lattice:
                         print_values[j] = '%e' % print_values[j]
                         print_values[j] = print_values[j].replace('+', '')
  
-            print('\n --------------- creating clone with {} = {} ---------------\n'.format(
-                   print_params, values))
-            
             # set clone directory suffix
             if clone_sfx is None:
                 sfx = '__'.join(['{}_{}'.format(print_params[j], print_values[j]) 
@@ -403,6 +411,16 @@ class namelist_lattice:
 
             new_case = '{}/{}__{}'.format(top_clone_dir, clone_prefix, sfx)
             new_case_out = '{}/{}__{}'.format(top_output_dir, clone_prefix, sfx)
+        
+            # if reading existing clones, append case to self.clon_dirs and continue to next case iteration
+            # (skip all else; cloning, namelist editing etc.)
+            if(read_existing_clones):
+                print('--------------- READ existing case {} ---------------'.format(new_case)) 
+                self.clone_dirs.append(new_case)
+                continue
+            
+            print('\n --------------- creating clone with {} = {} ---------------\n'.format(
+                   print_params, values))
             
             # check that this clone does not already exist; if so, handle
             if(os.path.isdir(new_case) and overwrite == False):
@@ -429,13 +447,10 @@ class namelist_lattice:
             if(self.stdout is not None):
                 subprocess.run(cmd.split(' '), stdout=self.stdoutf)
             else:
-                subprocess.run(cmd.split(' '))
+                subprocess.run(cmd.split(' ')) 
             self.clone_dirs.append(new_case)
 
-            # force clone to match root in RESUBMIT (doesn't happen by default)
-            #os.chdir(root_case)
-            #resubmits = subprocess.check_output('{}/xmlquery RESUBMIT'.format(root_case).split(' '))
-            #resubmits = int(resubmits.split()[-1])
+            # --- set clone resubmissions ---
             print('Setting RESUBMIT={}'.format(resubmits))
             os.chdir(new_case)
             subprocess.run('{}/xmlchange RESUBMIT={}'.format(new_case, resubmits).split(' '), 
@@ -524,9 +539,68 @@ class namelist_lattice:
             
             print('\n\n=============== submitting job from {} ===============\n'.format(submit))
             if(dry):
-                print(submit)
+                print('DRY: {}'.format(submit))
             else:
                 # pipe output to file if specified
+                if(self.stdout is not None):
+                    subprocess.run(submit, stdout=self.stdoutf)
+                else:
+                    subprocess.run(submit)
+    
+
+    # ------------------------------------------------------------------------------
+
+
+    def resubmit_hung_clone_runs(self, dry=False):
+        '''
+        Resubmit runs of any cloned cases created by self.create_clones() for which
+        './xmlquery RESUBMIT' does not currently return 0. This is meant to be used in 
+        instances where a job crashed due to an error thrown by the job scheduler, and 
+        not the model. In these cases, we may end up with some clones having finished 
+        all of the requested resubmits, while other have not. This funciton identifies
+        those incomplete runs and submits them again. 
+
+        It is up to the user to ensure that no cases for which RESUBMIT > 0 are currently
+        queued or running before calling this function, which would cause an I/O related
+        model crash of the running or queued case. Only use this for recovery after
+        whatever caused job resubmissions to inturrupt has been identified.
+
+        It is assumed that each case environment is ALREADY setup for the next resubmission.
+        That is, RESUBMIT should already have been decremeneted, and CONTINUE_RUN enabled, 
+        if necessary, since the previous model run. If the resubmission chain failed due to 
+        a scheduler issue, then it probably occured after the case configuration was updated, 
+        in which case this function can just be run without any other steps.
+
+        Parameters
+        ----------
+        dry : boolean
+            Whether or not to do a dry run, which just prints the location of each
+            resubmission script which is about to be called. Defaults to False.
+        '''
+        
+        if(len(self.clone_dirs) == 0):
+            raise RuntimeError('Clone cases must first be created by calling expand()')
+        
+        for clone in self.clone_dirs:
+            
+            os.chdir(clone)
+            resub_query = ['{}/xmlquery'.format(clone), 'RESUBMIT']
+            resubs = subprocess.check_output(resub_query)
+            resubs = int(resubs.split()[-1])
+            
+            # If RESUBMIT is zero, then there is nothing to do
+            if(resubs == 0):
+                print('\n=== no resubmission needed for {} ===\n'.format(clone))
+                continue
+
+            # else, resubmit
+            submit = '{}/case.submit'.format(clone)
+            
+            print('\n\n=============== resubmitting job from {} with RESUBMIT={} ===============\n'.format(
+                                                                                            submit, resubs))
+            if(dry):
+                print('DRY: {}'.format(submit))
+            else:
                 if(self.stdout is not None):
                     subprocess.run(submit, stdout=self.stdoutf)
                 else:
@@ -539,6 +613,7 @@ class namelist_lattice:
     def vis_planes(self):
         '''
         Visualizes the lattice as a GTC, with a subplot per parameter pair
+        This function is probbaly broken right now btw
         '''
 
         N = len(self.param_names)

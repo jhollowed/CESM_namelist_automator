@@ -29,7 +29,7 @@ class ensembler:
     
     # ------------------------------------------------------------------------------
 
-    def add_members(self, ic_dir, globstr=None):
+    def add_members(self, ic_dir, globstr=None, regex=None):
         '''
 
         Parameters
@@ -46,8 +46,7 @@ class ensembler:
         '''
         if globstr is not None: 
             globstr = '{}/{}'.format(ic_dir, globstr)
-        else: 
-            globstr = '{}/*'.format(ic_dir)
+        globstr = '{}/*'.format(ic_dir)
         ic_files = glob.glob(globstr)
         ic_files = ['\"{}\"'.format(f) for f in ic_files if not os.path.isdir(f)]
         ic_files = sorted(ic_files)
@@ -59,19 +58,16 @@ class ensembler:
 
     def create_members(self, root_case, top_clone_dir, top_output_dir, cime_dir,
                        clone_prefix=None, overwrite=False, clean_all=False, 
-                       stdout=None, resubmits=0):
-        '''
-        
+                       stdout=None, resubmits=0, read_existing_clones=False):
+        '''        
         Parameters
         ----------
         root_case : string
             Location of the root case to be cloned
         top_clone_dir : string
-            Top directory for all clones to be created in. Default is None, in which case
-            clones are all created at the same location as root_case
+            Top directory for all clones to be created in
         top_output_dir : string
-            The top directory in which all clones will output to after being run. Default is 
-            None, in which case the output directory of the root case is used.
+            The top directory in which all clones will output to after being run
         cime_dir : string
             Location of the cime/scripts directory
         clone_prefix : string, optional
@@ -95,10 +91,17 @@ class ensembler:
         resubmits : int, optional
             Number of resubmits for clones. Unfortunately, this currently may not be inherited from
             the root case, and should be set manually here. Default is 0.
+        read_existing_clones : bool, optional
+            If True, then instead of throwing an error or overwriting currently existing cases, 
+            simply add them to self.clone_dirs, and continue. Useful if needing to call a method
+            of this class that requires self.clone_dirs to be populated, when clones have already
+            been created, and do not need to be made again (e.g. resubmit_hung_clone_runs). 
+            Defaults to False.
+            If True, then overwrite and clean_all must both be False. This is enforced.
         '''
         ens_sfx = ['ens{:02d}'.format(i+1) for i in range(self.N)]
         self.lattice.create_clones(root_case, top_clone_dir, top_output_dir, cime_dir, clone_prefix, 
-                                   ens_sfx, overwrite, clean_all, stdout, resubmits)
+                                   ens_sfx, overwrite, clean_all, stdout, resubmits, read_existing_clones)
     
     # ------------------------------------------------------------------------------
     
@@ -113,6 +116,21 @@ class ensembler:
             submission script which is about to be called. Defaults to False.
         '''
         self.lattice.submit_clone_runs(dry)
+
+
+    def resubmit_hung_members(self, dry=False): 
+        '''
+        Resubmit runs of the cloned cases created by self.clone_members() for which the 
+        resbumission process was inturrupted by a job scheduler problem. See docstrings
+        in namelist_lattice.resubmit_hung_clone_runs() for more info.
+
+        Parameters
+        ----------
+        dry : boolean, optional
+            Whether or not to do a dry run, which just prints the location of each
+            submission script which is about to be called. Defaults to False.
+        '''
+        self.lattice.resubmit_hung_clone_runs(dry)
 
 
 # =============================================================================
